@@ -6,9 +6,11 @@ import time
 # %matplotlib inline
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
-from PIL import Image
+from PIL import Image as PLTImage
 from io import BytesIO
 from azure.storage.blob import BlobServiceClient
+from openpyxl import Workbook
+from openpyxl.drawing.image import Image
 
 def request_analysis(subscription_key, image_name, text_recognition_url):
     headers = {'Ocp-Apim-Subscription-Key': subscription_key}
@@ -52,7 +54,7 @@ def create_polygons(analysis):
 def draw_boxes(image_name, polygons):
     # Display the image and overlay it with the extracted text.
     plt.figure(figsize=(15, 15))
-    image = Image.open(BytesIO(requests.get("https://elevenbravodelta.blob.core.windows.net/capstone/2019/" + image_name).content))
+    image = PLTImage.open(BytesIO(requests.get("https://elevenbravodelta.blob.core.windows.net/capstone/2019/" + image_name).content))
     ax = plt.imshow(image)
     for polygon in polygons:
         vertices = [(polygon[0][i], polygon[0][i+1])
@@ -64,8 +66,7 @@ def draw_boxes(image_name, polygons):
 
     plt.savefig(image_name)
 
-@task
-def main(c):
+if __name__ == '__main__':
     if 'COMPUTER_VISION_SUBSCRIPTION_KEY' in os.environ:
         subscription_key = os.environ['COMPUTER_VISION_SUBSCRIPTION_KEY']
     else:
@@ -82,7 +83,10 @@ def main(c):
     else:
         print("\nSet the AZURE_STORAGE_CONNECTION_STRING environment variable.\n**Restart your shell or IDE for changes to take effect.**")
         sys.exit()
-    
+    wb = Workbook()
+    wb.remove(wb.active)
+    dest_filename = 'jandr_book1.xlsx'
+
     blob_service_client = BlobServiceClient.from_connection_string(connect_str)
     container_client = blob_service_client.get_container_client('capstone')
     blob_list = container_client.list_blobs()
@@ -90,5 +94,11 @@ def main(c):
         image_name = blob['name'].split('/')[1]
         operation_url = request_analysis(subscription_key, image_name, text_recognition_url)
         analysis = analyze_response(operation_url, subscription_key)
+        ws = wb.create_sheet(title=image_name)
+        for line in analysis["recognitionResults"][0]["lines"]:
+          ws.append([line['text']])
         polygons = create_polygons(analysis)
         draw_boxes(image_name, polygons)
+        img = Image(image_name)
+        ws.add_image(img, 'E1')
+    wb.save(filename=dest_filename)
